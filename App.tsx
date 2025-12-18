@@ -20,6 +20,11 @@ const AppContent: React.FC = () => {
   const [assets, setAssets] = useState<ImageAsset[]>(INITIAL_MOCK_ASSETS);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
+  const showNotification = useCallback((message: string, type: 'success' | 'error') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 5000);
+  }, []);
+
   const connectWallet = useCallback(async () => {
     setUser(prev => ({ ...prev, isConnecting: true }));
     try {
@@ -36,16 +41,11 @@ const AppContent: React.FC = () => {
         showNotification('MetaMask Connected to Polygon', 'success');
       }
     } catch (err: any) {
-      console.error(err);
+      console.error('Connection Error:', err);
       showNotification(err.message || 'Connection failed', 'error');
-      setUser(prev => ({ ...prev, isConnecting: false }));
+      setUser(prev => ({ ...prev, address: null, balance: '0', networkId: null, isConnecting: false }));
     }
-  }, []);
-
-  const showNotification = (message: string, type: 'success' | 'error') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 5000);
-  };
+  }, [showNotification]);
 
   const handleBuy = async (asset: ImageAsset) => {
     if (!user.address) {
@@ -57,21 +57,14 @@ const AppContent: React.FC = () => {
       const service = Web3Service.getInstance();
       showNotification(`Initiating Secure Transfer of ${asset.price} ETHO...`, 'success');
       
-      // Step 1: User sends ETHO to the Platform Wallet (Your wallet)
-      // This wallet acts as the intermediary to ensure the NFT is minted and the seller is paid.
       await service.purchaseImage(asset.price, PLATFORM_WALLET_ADDRESS);
       
       showNotification('Funds Secured. Minting NFT to Vault...', 'success');
-      
-      // Step 2: The platform automatically mints/transfers the NFT (Simulated in background)
-      // Logic would typically trigger a backend script here using the platform private key.
-      
       showNotification('Success! Asset acquired and NFT minted.', 'success');
       
-      // Remove from marketplace (simulation)
       setAssets(prev => prev.filter(a => a.id !== asset.id));
     } catch (err: any) {
-      console.error(err);
+      console.error('Purchase Error:', err);
       showNotification(err.message || 'Transaction failed', 'error');
     }
   };
@@ -84,13 +77,13 @@ const AppContent: React.FC = () => {
 
     const newAsset: ImageAsset = {
       id: Math.random().toString(36).substr(2, 9),
-      name: data.name,
-      description: data.description,
-      imageUrl: data.imageUrl || `https://picsum.photos/seed/${data.name}/800/1000`,
+      name: data.name || 'Untitled Asset',
+      description: data.description || 'No description provided.',
+      imageUrl: data.imageUrl || `https://picsum.photos/seed/${Math.random()}/800/1000`,
       price: parseFloat(data.price) || 100,
       seller: user.address,
       createdAt: Date.now(),
-      tags: data.tags.split(',').map((t: string) => t.trim())
+      tags: data.tags ? data.tags.split(',').map((t: string) => t.trim()) : ['General']
     };
 
     setAssets(prev => [newAsset, ...prev]);
@@ -99,16 +92,21 @@ const AppContent: React.FC = () => {
   };
 
   useEffect(() => {
-    if ((window as any).ethereum) {
-      (window as any).ethereum.on('accountsChanged', (accounts: string[]) => {
+    const ethereum = (window as any).ethereum;
+    if (ethereum) {
+      const handleAccounts = (accounts: string[]) => {
         if (accounts.length > 0) connectWallet();
         else setUser({ address: null, balance: '0', networkId: null, isConnecting: false });
-      });
+      };
+      ethereum.on('accountsChanged', handleAccounts);
+      return () => {
+        if (ethereum.removeListener) ethereum.removeListener('accountsChanged', handleAccounts);
+      };
     }
   }, [connectWallet]);
 
   return (
-    <div className="min-h-screen relative overflow-x-hidden">
+    <div className="min-h-screen relative flex flex-col">
       <div className="fixed top-0 left-0 w-full h-full -z-10 bg-[#020617]">
         <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-sky-500/10 blur-[120px] rounded-full" />
         <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/10 blur-[120px] rounded-full" />
@@ -117,20 +115,20 @@ const AppContent: React.FC = () => {
       <Navbar user={user} onConnect={connectWallet} />
 
       {notification && (
-        <div className={`fixed bottom-8 right-8 z-[100] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce transition-all ${
+        <div className={`fixed bottom-8 right-8 z-[100] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 transition-all border ${
           notification.type === 'success' ? 'glass border-emerald-500/50 text-emerald-400' : 'glass border-rose-500/50 text-rose-400'
         }`}>
-          <div className={`w-2 h-2 rounded-full ${notification.type === 'success' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-          <span className="text-sm font-bold font-space">{notification.message}</span>
+          <div className={`w-2 h-2 rounded-full animate-pulse ${notification.type === 'success' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+          <span className="text-sm font-bold font-space uppercase tracking-tight">{notification.message}</span>
         </div>
       )}
 
-      <main className="container mx-auto px-6 py-12">
+      <main className="flex-1 container mx-auto px-6 py-12">
         <Routes>
           <Route path="/" element={
             <section>
               <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
-                <div>
+                <div className="animate-in fade-in slide-in-from-left duration-700">
                   <h1 className="text-5xl md:text-7xl font-black font-space tracking-tighter mb-4 leading-none uppercase">
                     Visiønary <span className="text-sky-500">Assets</span>
                   </h1>
@@ -138,7 +136,7 @@ const AppContent: React.FC = () => {
                     The elite portal for professional image trading. Secured by the ETHO protocol on Polygon.
                   </p>
                 </div>
-                <div className="flex gap-4">
+                <div className="flex gap-4 animate-in fade-in slide-in-from-right duration-700">
                   <div className="glass px-6 py-4 rounded-2xl border-white/5">
                     <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Market Vol.</div>
                     <div className="text-xl font-space font-bold text-sky-400">1.2M ETHO</div>
@@ -151,19 +149,17 @@ const AppContent: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                {assets.map(asset => (
-                  <ImageCard 
-                    key={asset.id} 
-                    asset={asset} 
-                    onBuy={handleBuy}
-                  />
+                {assets.map((asset, index) => (
+                  <div key={asset.id} className="animate-in fade-in zoom-in duration-500" style={{ animationDelay: `${index * 100}ms` }}>
+                    <ImageCard asset={asset} onBuy={handleBuy} />
+                  </div>
                 ))}
               </div>
             </section>
           } />
           <Route path="/upload" element={<UploadForm onUpload={handleUpload} />} />
           <Route path="/dashboard" element={
-            <div className="max-w-4xl mx-auto">
+            <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom duration-700">
               <div className="glass rounded-3xl p-10 mb-8 overflow-hidden relative">
                 <div className="absolute top-0 right-0 p-8 text-slate-800/10 -rotate-12 select-none pointer-events-none">
                   <svg className="w-64 h-64" fill="currentColor" viewBox="0 0 24 24">
@@ -232,6 +228,10 @@ const AppContent: React.FC = () => {
           } />
         </Routes>
       </main>
+      
+      <footer className="py-8 border-t border-white/5 text-center text-slate-600 text-[10px] uppercase tracking-widest font-bold">
+        Powered by ETHO Protocol | Professional Asset Minting Engine
+      </footer>
     </div>
   );
 };
